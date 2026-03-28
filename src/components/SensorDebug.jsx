@@ -17,6 +17,18 @@ const STYLE = {
   lineHeight: 1.6,
 }
 
+const SOURCE_LABELS = {
+  bridge: 'BRIDGE',
+  device: 'SENSOR',
+  keyboard: 'KEYBOARD',
+}
+
+const STATUS_COLORS = {
+  connected: '#4ade80',
+  connecting: '#ff8c00',
+  disconnected: '#ff2d4b',
+}
+
 export default function SensorDebug() {
   const [visible, setVisible] = useState(false)
   const [vals, setVals] = useState(null)
@@ -43,15 +55,21 @@ export default function SensorDebug() {
 
   if (!visible || !vals) return null
 
+  const bridgeSt = input.bridgeStatus()
+  const sourceLabel = SOURCE_LABELS[vals.source] || vals.source
+  const statusColor = STATUS_COLORS[bridgeSt] || '#888'
+
   return (
     <div style={STYLE}>
-      <div style={{ color: '#ff8c00', marginBottom: 4 }}>
-        {input.isUsingFallback ? 'KEYBOARD' : 'SENSOR'}
-        {input.isAvailable === null && ' (detecting...)'}
+      <div style={{ display: 'flex', gap: 8, marginBottom: 4 }}>
+        <span style={{ color: '#ff8c00' }}>{sourceLabel}</span>
+        <span style={{ color: statusColor, fontSize: 9 }}>
+          ws: {bridgeSt}
+        </span>
       </div>
       <div>fwd: {vals.forward.toFixed(2)}</div>
       <div>bwd: {vals.backward.toFixed(2)}</div>
-      <div>pull: {vals.sharpPull ? 'YES' : '-'}</div>
+      <div>tilt: {vals.sharpTilt ? 'YES' : '-'}</div>
       <div>spin: {vals.spinRate.toFixed(1)}</div>
       <div>
         commit: {vals.commitForward ? 'FWD' : vals.commitBackward ? 'BWD' : '-'}

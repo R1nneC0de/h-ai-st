@@ -27,8 +27,8 @@ export default function CorridorCamera({ corridorLength, onReachEnd }) {
       idleTime.current = 0
       const netMove = (state.forward - state.backward) * MOVE_SPEED * delta
       targetZ.current -= netMove // negative Z = forward into corridor
-    } else if (!state.isUsingFallback) {
-      // Auto-drift only in sensor mode — keyboard players control their own pace
+    } else if (state.source !== 'keyboard') {
+      // Auto-drift only in sensor/bridge mode — keyboard players control their own pace
       idleTime.current += delta
       if (idleTime.current > AUTO_DRIFT_DELAY) {
         targetZ.current -= AUTO_DRIFT_SPEED * delta
