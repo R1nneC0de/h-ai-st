@@ -13,7 +13,9 @@ Focused plan for **Slots**, **Roulette**, and **Blackjack**: what the repo has t
 | **Dev HTTPS** | `@vitejs/plugin-basic-ssl` — for DeviceOrientation fallback on mobile; not needed for MacBook accelerometer bridge |
 | **Design tokens** | `src/index.css` defines palette (felt, gold, neon red, laser, amber) + Playfair / JetBrains Mono (HTML fonts) |
 | **GDD** | `project.md` — full mechanics, scoring, transitions |
-| **Missing for mini-games** | Zustand store, phase router, sensor bridge + `useTilt` hook, `public/fonts` directory (App.jsx references `/fonts/PlayfairDisplay-Black.ttf` but file doesn't exist), Howler sound map, shared HUD, mini-game components |
+| **Sensor input** | `sensor-bridge/bridge.py` (WebSocket server reading MacBook accelerometer via `macimu`) + `useTiltBridge` hook + `usePlayerInput` (three-tier: bridge → DeviceOrientation → keyboard) — **built and compiling** |
+| **Zustand store** | `useGameStore.js` with phase routing, score, vault digits, invincibility — **built** |
+| **Missing for mini-games** | `public/fonts` directory (App.jsx references `/fonts/PlayfairDisplay-Black.ttf` but file doesn't exist), Howler sound map, shared `CasinoStage`, mini-game components, post-processing pipeline |
 
 **Implication:** Mini-games should be built **after** a thin global layer exists: `phase`, `score`, `vaultDigits[]`, and sensor hooks. Otherwise each mini-game will re-implement state and be hard to integrate with lasers and vault later.
 
@@ -41,15 +43,21 @@ MacBook accelerometer (SPU)
 - **Pitch** = forward/backward tilt (screen away = positive, screen toward = negative)
 - **Yaw** = rotation around vertical axis (used for roulette spin)
 
-### React hook: `useTilt()`
+### React hooks (built)
 
-Located at `src/hooks/useTilt.js`. Three-tier fallback:
+**`src/hooks/useTiltBridge.js`** — WebSocket client. Connects to `ws://127.0.0.1:8765`, auto-reconnects every 2s, computes `yawDelta` for roulette spin, detects stale data (>500ms = disconnected). Exposes a `poll()` function returning `{ pitch, roll, yaw, yawDelta, connected, status }`.
 
-1. **WebSocket** (primary) — connects to `ws://127.0.0.1:8765`, parses pitch/roll/yaw from bridge
-2. **DeviceOrientation** (mobile fallback) — maps beta → pitch, alpha → yaw
-3. **Keyboard** (dev/debug fallback) — arrow up/down → pitch, arrow left/right → yaw
+**`src/hooks/usePlayerInput.js`** — Unified input hook. Three-tier fallback:
 
-Exposes: `{ pitch, roll, yaw, connected, source }` where `source` is `'bridge'` | `'device'` | `'keyboard'`.
+1. **`useTiltBridge`** (primary) — MacBook accelerometer via WebSocket bridge
+2. **`useDeviceOrientation` + `useDeviceMotion`** (mobile fallback) — browser sensor APIs
+3. **`useInputFallback`** (dev/debug) — WASD/arrows + trackpad drag + spacebar
+
+All tiers normalize to the same output shape from `poll()`:
+`{ forward, backward, sharpTilt, spinRate, commitForward, commitBackward, source }`
+where `source` is `'bridge'` | `'device'` | `'keyboard'`.
+
+**`src/components/SensorDebug.jsx`** — Debug overlay (toggle with backtick). Shows active source, WebSocket status, and all input values live.
 
 ### Control mapping (all docs aligned)
 
@@ -275,7 +283,7 @@ Each reel is a `CylinderGeometry` (radiusTop=0.6, radiusBottom=0.6, height=0.8, 
 The player tilts the laptop to spin the reels. No lever pull — the machine responds directly to the tilt itself:
 
 - **Idle:** Machine hums softly, reels stationary, "TILT TO SPIN" prompt pulses above the glass panel
-- **Spin detection:** `useTilt` pitch change past threshold (e.g. >15deg from neutral within 500ms). The magnitude/speed of the tilt maps to initial spin velocity — a lazy tilt = slow spin, a sharp committed tilt = reels blur
+- **Spin detection:** `usePlayerInput` `sharpTilt` flag (pitch change >8deg between polls). The magnitude/speed of the tilt maps to initial spin velocity — a lazy tilt = slow spin, a sharp committed tilt = reels blur
 - **Machine reaction:** On spin trigger, machine body does a micro-shake (position jitter ±0.01 over 0.15s), glass panel catches a light flash, spin sound kicks in
 - **Lever animation (cosmetic):** The lever on the side of the machine animates in sync — yanks down over 0.2s (`power2.in`), springs back over 0.4s (`elastic.out(1, 0.6)`). It's a visual flourish reacting to the tilt, not the input itself
 
@@ -355,7 +363,7 @@ This is the only trackpad-driven phase. It should feel unhurried and luxurious:
 
 ### Spin phase — physical spectacle
 
-- **Trigger:** "Tilt to spin" prompt (3D text, pulsing gently). Player rotates laptop. `useTilt` yaw delta maps to angular velocity
+- **Trigger:** "Tilt to spin" prompt (3D text, pulsing gently). Player rotates laptop. `usePlayerInput` `spinRate` (yaw delta) maps to angular velocity
 - **Wheel rotation:** `useFrame` — `wheel.rotation.y += angularVelocity * dt`. Velocity builds while player rotates, caps at max. On release (yaw stable for 500ms), velocity begins decaying
 - **Ball release:** Once spin velocity crosses minimum threshold, ball releases from rim:
   1. **Rim orbit** (1.5s): Ball travels along outer rim, speed matched to wheel + slight relative velocity. Audio: rhythmic click as ball crosses each spoke (Howler sprite, rate-shifted to match speed)
@@ -533,14 +541,19 @@ const SOUNDS = {
 
 ### M1 — Foundation (prerequisite for everything)
 
-- [ ] Zustand store: `phase`, `score`, `vaultDigits[]`, `laserSection`, `appendVaultDigits`, `addScore`
-- [ ] Phase router in `App.jsx` (switch on `phase`, mount/unmount components)
-- [ ] Sensor bridge (`sensor-bridge/bridge.py`) — Python WebSocket server reading MacBook accelerometer
-- [ ] `useTilt` hook with WebSocket → DeviceOrientation → keyboard fallback chain
+- [x] Zustand store: `phase`, `score`, `vaultDigits[]`, `laserSection` + actions (`useGameStore.js`)
+- [x] Phase router in `App.jsx` (`PhaseRouter` + `SceneRouter` + `OverlayRouter`)
+- [x] Sensor bridge (`sensor-bridge/bridge.py`) — Python WebSocket server reading MacBook accelerometer via `macimu`
+- [x] `useTiltBridge` hook — WebSocket client with auto-reconnect
+- [x] `usePlayerInput` hook — three-tier fallback (bridge → DeviceOrientation → keyboard), unified `poll()` API
+- [x] `useInputFallback` hook — keyboard WASD/arrows + trackpad drag for dev/debug
+- [x] `SensorDebug` overlay — toggle with backtick, shows source + status + live values
+- [x] `CorridorCamera` — consumes `usePlayerInput`, auto-drift, camera bob
+- [x] `HUD` component (score + vault dashes)
+- [x] `HitFlash` component
 - [ ] Download Playfair Display Black + JetBrains Mono `.ttf` to `public/fonts/`
 - [ ] `materials.js` shared materials module
 - [ ] `CasinoStage` wrapper (lighting, fog, floor, environment)
-- [ ] `HUD` component (score + vault dashes)
 - [ ] `VaultDigitFlash` component (the 2s reveal)
 - [ ] Post-processing pipeline (bloom, vignette, noise)
 - [ ] Howler sound manager skeleton
