@@ -1,10 +1,14 @@
+import { useRef } from 'react'
 import { Canvas } from '@react-three/fiber'
 import { SceneRouter, OverlayRouter } from './components/PhaseRouter'
 import HUD from './components/HUD'
 import HitFlash from './components/HitFlash'
+import Transition from './components/Transition'
 import SensorDebug from './components/SensorDebug'
 
 export default function App() {
+  const transitionRef = useRef()
+
   return (
     <>
       <Canvas
@@ -17,6 +21,7 @@ export default function App() {
       <OverlayRouter />
       <HUD />
       <HitFlash />
+      <Transition ref={transitionRef} />
       <SensorDebug />
     </>
   )
