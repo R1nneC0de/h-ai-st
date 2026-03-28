@@ -329,11 +329,11 @@ A small prompt at the bottom: *"Tilt to play again."*
 - **Framework:** React + Vite
 - **3D Rendering:** Three.js via `@react-three/fiber` and `@react-three/drei`
 - **Animations:** GSAP for timeline sequences (vault door, transitions, countdowns)
-- **Sensor Input:** Raw `DeviceOrientation` and `DeviceMotion` API — requires HTTPS
+- **Sensor Input:** MacBook's built-in MEMS accelerometer (Apple SPU) accessed via a local Python WebSocket bridge (`sensor-bridge/bridge.py`). The bridge reads raw accelerometer data via IOKit HID, computes pitch/roll/yaw orientation, and streams it to the browser over `ws://127.0.0.1:8765`. The `DeviceOrientation` web API does **not** work on macOS browsers (returns null) — the bridge is required for laptop play. Fallback to `DeviceOrientation` API exists for mobile/tablet, and keyboard arrows for dev/debug.
 - **Audio:** Howler.js
 - **State Management:** Zustand — tracks current game phase, score, vault digits, laser section
-- **Deploy:** Vercel (handles HTTPS automatically, required for sensor permissions)
-- **No backend.** Everything lives client-side. The vault code is assembled in memory and validated locally.
+- **Deploy:** Vercel (hosts the browser game; sensor bridge runs locally on the player's MacBook)
+- **No remote backend.** Game logic is entirely client-side. The sensor bridge is a local-only process.
 
 ---
 

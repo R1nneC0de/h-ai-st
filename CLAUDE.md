@@ -9,27 +9,44 @@ Single-player browser game for Hacklanta 2026 (Jack of All Trades track). Casino
 - **GSAP** — cinematic transitions, vault door, countdowns
 - **Howler.js** — all audio
 - **Zustand** — global state (phase, score, vault digits, laser section)
-- **DeviceOrientation + DeviceMotion API** — core input, requires HTTPS
-- **Vercel** — deploy (handles HTTPS for sensor permissions)
-- No backend. Everything client-side.
+- **MacBook accelerometer via WebSocket bridge** — primary input for M3 MacBook Pro. A local Python script reads the Apple SPU accelerometer via IOKit HID and streams orientation data over `ws://127.0.0.1:8765`. The React app consumes this via a `useTilt` hook that normalizes the data into pitch/roll/yaw values. See `sensor-bridge/` directory.
+- **DeviceOrientation API** — fallback input path for mobile/tablet (requires HTTPS). Not used on MacBook (returns null on macOS browsers).
+- **Vercel** — deploy (hosts the browser game; sensor bridge runs locally on the MacBook)
+- No remote backend. Game logic is entirely client-side. The sensor bridge is a local-only process.
 
 ## Game Flow
 ```
 Splash → Laser 1 → Slots → Laser 2 → Roulette → Laser 3 → Blackjack → Vault Entry → Vault Reveal
 ```
 
-## Sensor Mapping (Forward/Backward Only — Laptop Primary)
-| Axis | Action |
-|------|--------|
-| `beta` decreases (tilt screen away) | Move forward in corridor |
-| `beta` increases (tilt screen toward) | Move backward |
-| `beta` tilt past threshold | Spin slot reels (commitment maps to speed) |
-| `alpha` rotation | Spin roulette wheel |
-| `beta` forward (committed, held 500ms) | Blackjack: Hit |
-| `beta` backward (committed, held 500ms) | Blackjack: Stand |
+## Sensor Input Architecture
+
+### How it works
+MacBooks don't expose accelerometer data to browsers — `DeviceOrientation`/`DeviceMotion` APIs return null on macOS. Instead, a local Python WebSocket bridge reads the M3 MacBook Pro's built-in MEMS accelerometer (Apple SPU, `AppleSPUHIDDevice`) via IOKit HID and streams x/y/z acceleration at ~100Hz over `ws://127.0.0.1:8765`. The React app connects to this WebSocket and computes pitch (forward/backward tilt) and yaw (rotation) from the raw acceleration data.
+
+### Sensor bridge (`sensor-bridge/`)
+- `bridge.py` — reads accelerometer via `apple-silicon-accelerometer` Python package, computes orientation (Mahony AHRS filter), streams JSON `{ pitch, roll, yaw }` over WebSocket
+- Requires: `pip3 install apple-silicon-accelerometer websockets`
+- Start with: `python3 sensor-bridge/bridge.py`
+
+### React hook (`useTilt`)
+- Connects to `ws://127.0.0.1:8765` on mount
+- Exposes `{ pitch, roll, yaw, connected }` — updated every frame
+- Falls back to `DeviceOrientation` API if WebSocket unavailable (mobile/tablet)
+- Falls back to keyboard (arrow keys) if neither sensor source is available (dev/debug)
+
+### Sensor Mapping (Forward/Backward Only — Laptop Primary)
+| Input | Action |
+|-------|--------|
+| Pitch increases (tilt screen away) | Move forward in corridor |
+| Pitch decreases (tilt screen toward) | Move backward |
+| Pitch change past threshold | Spin slot reels (commitment maps to speed) |
+| Yaw rotation | Spin roulette wheel |
+| Pitch forward (committed, held 500ms) | Blackjack: Hit |
+| Pitch backward (committed, held 500ms) | Blackjack: Stand |
 | Flat/still | Dead Still mechanic (if used) |
 
-> **No left/right (gamma) movement.** Laptop tilting sideways is impractical. Corridor is a forward/backward timing gauntlet.
+> **No left/right (roll) movement.** Laptop tilting sideways is impractical. Corridor is a forward/backward timing gauntlet.
 
 ## Vault Code Assembly
 | Digits | Source |
@@ -58,11 +75,12 @@ Each result flashes for **2 seconds** then disappears. Player must memorize.
 - Aesthetic: Deep casino noir — Bellagio at 3am
 
 ## Key Implementation Notes
-- HTTPS required for DeviceOrientation — dev with `ngrok` or deploy to Vercel early and test on device
+- **Sensor bridge must be running** before starting the game — the React app shows a "Connecting to sensor..." state until WebSocket connects
+- HTTPS still required if using DeviceOrientation fallback on mobile — dev with Vite SSL plugin, deploy to Vercel
 - Tilt thresholds must be deliberate — too sensitive = accidental triggers
 - Auto-drift forward in laser if player stationary too long
 - Trackpad used **only** in Roulette betting phase (no mouse — trackpad click/tap)
-- Keyboard used **only** in Vault code entry
+- Keyboard used **only** in Vault code entry (and as debug fallback for tilt)
 - Vault validation is local — code assembled in Zustand, compared on confirm
 
 ## Zustand Store Shape
@@ -77,6 +95,9 @@ Each result flashes for **2 seconds** then disappears. Player must memorize.
 
 ## File Structure
 ```
+sensor-bridge/
+  bridge.py               # Python WebSocket server — reads MacBook accelerometer, streams pitch/roll/yaw
+  requirements.txt        # apple-silicon-accelerometer, websockets
 src/
   components/
     Splash.jsx
@@ -88,8 +109,7 @@ src/
     VaultReveal.jsx
     HUD.jsx
   hooks/
-    useDeviceOrientation.js
-    useDeviceMotion.js
+    useTilt.js              # primary: WebSocket → accelerometer bridge; fallback: DeviceOrientation → keyboard
   store/
     useGameStore.js
   audio/
@@ -100,7 +120,7 @@ src/
 ```
 
 ## Build Priority Order
-1. `useDeviceOrientation` hook — verify sensor access first, everything depends on it
+1. Sensor bridge (`sensor-bridge/bridge.py`) + `useTilt` hook — verify accelerometer data flows to browser first, everything depends on it
 2. Zustand store + phase routing
 3. Laser corridor (core loop)
 4. Mini-games (Slots → Roulette → Blackjack)

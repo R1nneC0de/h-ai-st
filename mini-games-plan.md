@@ -10,28 +10,60 @@ Focused plan for **Slots**, **Roulette**, and **Blackjack**: what the repo has t
 |------|--------|
 | **Stack** | React 19, Vite 8, `@react-three/fiber` + `drei`, Three.js, GSAP, Howler, Zustand — all in `package.json`, not yet wired for gameplay |
 | **App** | Single `Canvas` with ambient + gold point light, `drei` `<Text>` ("HEIST" / "scaffold loaded"), background `#080808` |
-| **Dev HTTPS** | `@vitejs/plugin-basic-ssl` — good for later `DeviceOrientation` / `DeviceMotion` |
+| **Dev HTTPS** | `@vitejs/plugin-basic-ssl` — for DeviceOrientation fallback on mobile; not needed for MacBook accelerometer bridge |
 | **Design tokens** | `src/index.css` defines palette (felt, gold, neon red, laser, amber) + Playfair / JetBrains Mono (HTML fonts) |
 | **GDD** | `project.md` — full mechanics, scoring, transitions |
-| **Missing for mini-games** | Zustand store, phase router, `useDeviceOrientation` / motion hooks, `public/fonts` directory (App.jsx references `/fonts/PlayfairDisplay-Black.ttf` but file doesn't exist), Howler sound map, shared HUD, mini-game components |
+| **Missing for mini-games** | Zustand store, phase router, sensor bridge + `useTilt` hook, `public/fonts` directory (App.jsx references `/fonts/PlayfairDisplay-Black.ttf` but file doesn't exist), Howler sound map, shared HUD, mini-game components |
 
 **Implication:** Mini-games should be built **after** a thin global layer exists: `phase`, `score`, `vaultDigits[]`, and sensor hooks. Otherwise each mini-game will re-implement state and be hard to integrate with lasers and vault later.
 
 ---
 
-## 2. Control scheme (all docs aligned)
+## 2. Sensor architecture + control scheme
 
-All movement is **forward/backward only** (beta axis). No lateral gamma movement — tilting a laptop sideways is impractical. All three docs (`CLAUDE.md`, `project.md`, this plan) now agree on these mappings:
+### Why a WebSocket bridge?
+
+MacBook browsers (Safari, Chrome) do **not** expose accelerometer data — `DeviceOrientation` and `DeviceMotion` APIs return null on macOS. The M3 MacBook Pro has a hidden MEMS accelerometer (Apple SPU, `AppleSPUHIDDevice`) but it's only accessible via IOKit HID at the native level. The solution is a lightweight local Python process that reads the sensor and streams orientation data to the browser over WebSocket.
+
+### Sensor bridge (`sensor-bridge/bridge.py`)
+
+```
+MacBook accelerometer (SPU)
+    → IOKit HID (raw x/y/z accel at ~100Hz)
+        → Mahony AHRS filter (fuses accel into pitch/roll/yaw)
+            → WebSocket server at ws://127.0.0.1:8765
+                → Browser (React app)
+```
+
+- **Dependencies:** `pip3 install apple-silicon-accelerometer websockets`
+- **Start:** `python3 sensor-bridge/bridge.py`
+- **Output:** JSON `{ "pitch": float, "roll": float, "yaw": float, "timestamp": int }` at ~60–100Hz
+- **Pitch** = forward/backward tilt (screen away = positive, screen toward = negative)
+- **Yaw** = rotation around vertical axis (used for roulette spin)
+
+### React hook: `useTilt()`
+
+Located at `src/hooks/useTilt.js`. Three-tier fallback:
+
+1. **WebSocket** (primary) — connects to `ws://127.0.0.1:8765`, parses pitch/roll/yaw from bridge
+2. **DeviceOrientation** (mobile fallback) — maps beta → pitch, alpha → yaw
+3. **Keyboard** (dev/debug fallback) — arrow up/down → pitch, arrow left/right → yaw
+
+Exposes: `{ pitch, roll, yaw, connected, source }` where `source` is `'bridge'` | `'device'` | `'keyboard'`.
+
+### Control mapping (all docs aligned)
+
+All movement is **forward/backward only** (pitch axis). No lateral roll movement — tilting a laptop sideways is impractical. All three docs (`CLAUDE.md`, `project.md`, this plan) agree:
 
 | Context | Input | Action |
 |---------|-------|--------|
-| Laser corridor | Beta decrease (tilt screen away) | Move forward |
-| Laser corridor | Beta increase (tilt screen toward) | Move backward |
-| Slots | Tilt (beta change past threshold) | Spin the reels — tilt commitment maps to spin speed |
+| Laser corridor | Pitch positive (tilt screen away) | Move forward |
+| Laser corridor | Pitch negative (tilt screen toward) | Move backward |
+| Slots | Pitch change past threshold | Spin the reels — tilt commitment maps to spin speed |
 | Roulette — betting | **Trackpad** (click/tap) | Pick number 0–36 + red/black color |
-| Roulette — spin | Tilt (alpha rotation) | Spin the wheel — rotation speed maps to wheel speed |
-| Blackjack | Beta forward, held 500ms | Hit |
-| Blackjack | Beta backward, held 500ms | Stand |
+| Roulette — spin | Yaw rotation | Spin the wheel — rotation speed maps to wheel speed |
+| Blackjack | Pitch forward, held 500ms | Hit |
+| Blackjack | Pitch backward, held 500ms | Stand |
 | Vault entry | Keyboard | Type 7-digit code |
 
 > **No mouse.** Trackpad is the only pointer device. Language throughout the codebase should say "trackpad" or "click/tap", never "mouse."
@@ -243,7 +275,7 @@ Each reel is a `CylinderGeometry` (radiusTop=0.6, radiusBottom=0.6, height=0.8, 
 The player tilts the laptop to spin the reels. No lever pull — the machine responds directly to the tilt itself:
 
 - **Idle:** Machine hums softly, reels stationary, "TILT TO SPIN" prompt pulses above the glass panel
-- **Spin detection:** `useDeviceOrientation` beta change past threshold (e.g. >15deg from neutral within 500ms). The magnitude/speed of the tilt maps to initial spin velocity — a lazy tilt = slow spin, a sharp committed tilt = reels blur
+- **Spin detection:** `useTilt` pitch change past threshold (e.g. >15deg from neutral within 500ms). The magnitude/speed of the tilt maps to initial spin velocity — a lazy tilt = slow spin, a sharp committed tilt = reels blur
 - **Machine reaction:** On spin trigger, machine body does a micro-shake (position jitter ±0.01 over 0.15s), glass panel catches a light flash, spin sound kicks in
 - **Lever animation (cosmetic):** The lever on the side of the machine animates in sync — yanks down over 0.2s (`power2.in`), springs back over 0.4s (`elastic.out(1, 0.6)`). It's a visual flourish reacting to the tilt, not the input itself
 
@@ -323,8 +355,8 @@ This is the only trackpad-driven phase. It should feel unhurried and luxurious:
 
 ### Spin phase — physical spectacle
 
-- **Trigger:** "Tilt to spin" prompt (3D text, pulsing gently). Player rotates laptop (alpha axis). `useDeviceOrientation` maps alpha delta to angular velocity
-- **Wheel rotation:** `useFrame` — `wheel.rotation.y += angularVelocity * dt`. Velocity builds while player rotates, caps at max. On release (alpha stable for 500ms), velocity begins decaying
+- **Trigger:** "Tilt to spin" prompt (3D text, pulsing gently). Player rotates laptop. `useTilt` yaw delta maps to angular velocity
+- **Wheel rotation:** `useFrame` — `wheel.rotation.y += angularVelocity * dt`. Velocity builds while player rotates, caps at max. On release (yaw stable for 500ms), velocity begins decaying
 - **Ball release:** Once spin velocity crosses minimum threshold, ball releases from rim:
   1. **Rim orbit** (1.5s): Ball travels along outer rim, speed matched to wheel + slight relative velocity. Audio: rhythmic click as ball crosses each spoke (Howler sprite, rate-shifted to match speed)
   2. **Spiral descent** (1.5s): Ball path radius decreases on a logarithmic curve, speed fluctuating. Camera does a slow zoom toward the wheel center
@@ -391,7 +423,7 @@ Two cards dealt in staggered sequence: card 1 at t=0, card 2 at t=0.5. Hand tota
 
 **500ms commit hold** is critical to prevent accidental triggers:
 
-- **Tilt detection:** Forward beta below threshold = "hit intent", backward beta above threshold = "stand intent"
+- **Tilt detection:** Pitch positive past threshold = "hit intent", pitch negative past threshold = "stand intent"
 - **Commit ring:** A radial progress ring (torus geometry or shader) appears around the hand total, filling clockwise over 500ms while the tilt is held. If player releases early, ring resets (fast fade, 0.15s)
 - **Trigger:** Ring completes → action fires. Ring flashes gold and disappears
 - **Hit:** New card deals from deck (same arc animation). Total updates with a number-roll animation (old value → new value, 0.3s). If new total > 21, auto-trigger bust
@@ -503,7 +535,8 @@ const SOUNDS = {
 
 - [ ] Zustand store: `phase`, `score`, `vaultDigits[]`, `laserSection`, `appendVaultDigits`, `addScore`
 - [ ] Phase router in `App.jsx` (switch on `phase`, mount/unmount components)
-- [ ] `useDeviceOrientation` hook with permission request UX
+- [ ] Sensor bridge (`sensor-bridge/bridge.py`) — Python WebSocket server reading MacBook accelerometer
+- [ ] `useTilt` hook with WebSocket → DeviceOrientation → keyboard fallback chain
 - [ ] Download Playfair Display Black + JetBrains Mono `.ttf` to `public/fonts/`
 - [ ] `materials.js` shared materials module
 - [ ] `CasinoStage` wrapper (lighting, fog, floor, environment)
@@ -526,7 +559,7 @@ const SOUNDS = {
 
 - [ ] `RouletteTable` component: wheel, pockets, ball, felt, betting grid
 - [ ] Betting phase: HTML overlay grid (trackpad-driven), chip placement, 15s timer
-- [ ] Spin phase: alpha rotation → wheel velocity, ball release + parametric path
+- [ ] Spin phase: yaw rotation → wheel velocity, ball release + parametric path
 - [ ] Ball spoke-click audio synced to crossing rate
 - [ ] Result detection + pocket highlight
 - [ ] Confetti particle burst on win
