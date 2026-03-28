@@ -6,7 +6,7 @@
 
 You are a casino thief. Tonight you're cracking the most secure vault in the city, buried beneath the casino floor. Between you and it: three laser corridors, three casino mini-games, and seven numbers you need to memorize under pressure. The laptop is your body. The tilt is your movement. The casino is your obstacle. The vault is your prize.
 
-This is a single-session, single-player browser game built entirely in React + Three.js, controlled almost entirely through the laptop's accelerometer and gyroscope. No mouse required except for one moment in roulette. No keyboard except the vault code entry at the very end. The physical commitment of tilting, rotating, and holding your laptop still *is* the experience — from the outside, watching someone play this looks unhinged. That's the point.
+This is a single-session, single-player browser game built entirely in React + Three.js, controlled almost entirely through the laptop's accelerometer and gyroscope. No trackpad required except for one moment in roulette (betting). No keyboard except the vault code entry at the very end. The physical commitment of tilting, rotating, and holding your laptop still *is* the experience — from the outside, watching someone play this looks unhinged. That's the point.
 
 ---
 
@@ -78,36 +78,33 @@ At the far end of each corridor section, a faint gold glow pulses — the checkp
 
 ### How Movement Works
 
-The player tilts the physical laptop to control their in-corridor position:
+The player tilts the physical laptop to control their forward/backward position in the corridor. There is **no lateral (left/right) movement** — tilting a laptop sideways is impractical. The corridor is a forward/backward timing gauntlet:
 
 - **Tilt forward (beta axis decreases):** Move forward through the corridor — the vanishing point rushes toward you, the checkpoint gets closer
 - **Tilt backward (beta axis increases):** Move backward — useful for retreating from an oncoming laser sweep
-- **Tilt left (gamma axis negative):** Sidestep left — character shifts laterally in the corridor
-- **Tilt right (gamma axis positive):** Sidestep right
 
-The movement is fluid, not grid-based. The player exists in a continuous 2D space mapped onto the corridor floor, and their Three.js camera shifts to match their position. The corridor walls and laser geometry stay fixed — the player moves through the world, the world doesn't move around them.
+The movement is fluid, not grid-based. The player moves along a single forward/backward axis through the corridor. The corridor walls and laser geometry stay fixed — the player moves through the world, the world doesn't move around them.
 
 Forward momentum is required to reach the checkpoint. You can't just sit still and wait out the lasers — the game gently pushes you forward with a slow automatic drift if you've been stationary too long.
 
 ### Laser Patterns
 
 **Section 1 — Tutorial:**
-- Mostly horizontal sweepers moving left to right at slow, predictable intervals
-- One or two static diagonal beams that require committed lateral movement to avoid
-- Generous gaps. Designed to teach the tilt mechanic, not punish the player
+- Slow sweeping beams with wide timing gaps — beams cross the corridor at predictable intervals
+- Generous windows between beams. Designed to teach the forward/backward tilt mechanic, not punish the player
 - Duration: approximately 60 seconds at a comfortable pace
 
 **Section 2 — Pressure:**
-- Horizontal sweepers now come from both directions simultaneously
-- Vertical beams that pulse on/off require timing, not just positioning
-- Diagonal cross-patterns create brief windows the player must thread through
+- Bidirectional sweepers — beams approach from ahead and behind simultaneously
+- Pulsing beams that flash on/off require timing, not just positioning
+- Tighter timing windows between beam patterns — the player must commit to advancing or retreating
 - Speed increased by roughly 40% from section one
 - Duration: approximately 90 seconds
 
 **Section 3 — Chaos:**
-- All of the above, plus rotating laser arms that sweep in arcs
-- Multiple simultaneous patterns layered on top of each other
-- Some beams that track the player's horizontal position (evasion required, not just static avoidance)
+- All of the above, plus rapid-fire rhythmic pulse patterns
+- Multiple simultaneous beam layers stacked in depth
+- Some beams that accelerate toward the player's depth position (must reverse quickly)
 - Speed at roughly double section one
 - Duration: approximately 90 seconds
 
@@ -151,7 +148,7 @@ A single, imposing 3D slot machine rendered in Three.js. Chrome and gold finish,
 
 ### How It Works
 
-The player tilts the laptop backward sharply — mimicking the physical act of pulling a lever. The speed and commitment of the tilt determines how fast the reels spin: a lazy tilt gives a slow lazy spin, a sharp committed yank sends the reels blurring. A 3D lever on the right side of the machine animates in response to the tilt.
+The player tilts the laptop to spin the reels. The speed and commitment of the tilt determines how fast the reels spin: a lazy tilt gives a slow lazy spin, a sharp committed tilt sends the reels blurring. A 3D lever on the right side of the machine animates as a cosmetic flourish in response to the tilt — it's eye candy, not the input itself.
 
 Once the tilt threshold is crossed, the reels commit to spinning. They slow down one at a time — left reel first, then center, then right — each landing with a satisfying mechanical clunk sound and a brief flash on the landed symbol.
 
@@ -186,8 +183,8 @@ A top-down slightly angled Three.js roulette wheel, rich green felt table extend
 
 ### How It Works
 
-**Phase 1 — Betting (mouse/click):**
-This is the one moment in the game where the mouse is used. The player clicks on a number (0–36) on the betting grid, then clicks either a red or black chip indicator. Their selection highlights gold. They have 15 seconds to place their bet before the phase locks in. This is intentionally unhurried — a moment of quiet strategy after the laser chaos.
+**Phase 1 — Betting (trackpad):**
+This is the one moment in the game where the trackpad is used. The player clicks/taps on a number (0–36) on the betting grid, then clicks/taps either a red or black chip indicator. Their selection highlights gold. They have 15 seconds to place their bet before the phase locks in. This is intentionally unhurried — a moment of quiet strategy after the laser chaos.
 
 **Phase 2 — Spinning (tilt):**
 Once the bet is placed, an overlay prompt appears: *"Tilt to spin."* The player rotates the laptop — any direction, any speed — and the roulette wheel begins spinning in response. The faster and more committed the rotation, the faster the wheel spins. Once a minimum spin threshold is hit, the ball releases from the edge of the wheel and begins its physics-driven arc around the rim, gradually losing speed and dropping inward toward the numbered pockets.
@@ -223,11 +220,11 @@ A Three.js card table, green felt, gold trim. Cards rendered as actual 3D object
 
 The player starts with two cards dealt face up. Their total is displayed prominently above the hand. The hand value in large text is their constant companion — the number they're racing toward or fleeing from.
 
-**Tilt left → Hit:** A new card slides across the table from the deck. The total updates. If they're at 20, this is terrifying. If they're at 12, it's reckless confidence.
+**Tilt forward (held ~500ms) → Hit:** A new card slides across the table from the deck. The total updates. If they're at 20, this is terrifying. If they're at 12, it's reckless confidence.
 
-**Tilt right → Stand:** The hand locks. Cards fan out, the final total freezes on screen.
+**Tilt backward (held ~500ms) → Stand:** The hand locks. Cards fan out, the final total freezes on screen.
 
-The tilt threshold for both directions is deliberate — not too sensitive. A slight lean doesn't trigger it. The player has to commit to the direction to trigger the action. This prevents accidental hits when stabilizing the laptop.
+The tilt threshold requires a committed hold of approximately 500ms — not just a momentary lean. The player has to deliberately tilt and sustain it to trigger the action. This prevents accidental hits when stabilizing the laptop.
 
 There's no time pressure on the hit/stand decision — the player can hold the laptop steady and think. But the heartbeat audio returns softly in the background, gently escalating pressure without a visible timer.
 

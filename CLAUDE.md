@@ -23,7 +23,7 @@ Splash → Laser 1 → Slots → Laser 2 → Roulette → Laser 3 → Blackjack 
 |------|--------|
 | `beta` decreases (tilt screen away) | Move forward in corridor |
 | `beta` increases (tilt screen toward) | Move backward |
-| Sharp `beta` backward | Pull slot lever |
+| `beta` tilt past threshold | Spin slot reels (commitment maps to speed) |
 | `alpha` rotation | Spin roulette wheel |
 | `beta` forward (committed, held 500ms) | Blackjack: Hit |
 | `beta` backward (committed, held 500ms) | Blackjack: Stand |
@@ -61,7 +61,7 @@ Each result flashes for **2 seconds** then disappears. Player must memorize.
 - HTTPS required for DeviceOrientation — dev with `ngrok` or deploy to Vercel early and test on device
 - Tilt thresholds must be deliberate — too sensitive = accidental triggers
 - Auto-drift forward in laser if player stationary too long
-- Mouse used **only** in Roulette betting phase
+- Trackpad used **only** in Roulette betting phase (no mouse — trackpad click/tap)
 - Keyboard used **only** in Vault code entry
 - Vault validation is local — code assembled in Zustand, compared on confirm
 

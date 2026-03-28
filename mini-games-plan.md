@@ -19,16 +19,22 @@ Focused plan for **Slots**, **Roulette**, and **Blackjack**: what the repo has t
 
 ---
 
-## 2. Design doc vs implementation guide (`CLAUDE.md`)
+## 2. Control scheme (all docs aligned)
 
-Resolve these **before** coding blackjack / laser movement so controls stay consistent:
+All movement is **forward/backward only** (beta axis). No lateral gamma movement — tilting a laptop sideways is impractical. All three docs (`CLAUDE.md`, `project.md`, this plan) now agree on these mappings:
 
-| Topic | `project.md` | `CLAUDE.md` (repo rule) |
-|--------|----------------|-------------------------|
-| Laser lateral movement | Gamma — sidestep | **No left/right** — forward/back only |
-| Blackjack actions | Tilt **left** = Hit, **right** = Stand | **Beta forward** (held) = Hit, **beta backward** (held) = Stand |
+| Context | Input | Action |
+|---------|-------|--------|
+| Laser corridor | Beta decrease (tilt screen away) | Move forward |
+| Laser corridor | Beta increase (tilt screen toward) | Move backward |
+| Slots | Tilt (beta change past threshold) | Spin the reels — tilt commitment maps to spin speed |
+| Roulette — betting | **Trackpad** (click/tap) | Pick number 0–36 + red/black color |
+| Roulette — spin | Tilt (alpha rotation) | Spin the wheel — rotation speed maps to wheel speed |
+| Blackjack | Beta forward, held 500ms | Hit |
+| Blackjack | Beta backward, held 500ms | Stand |
+| Vault entry | Keyboard | Type 7-digit code |
 
-**Recommendation:** Implement **CLAUDE.md** mapping for shipped build (laptop-first). If you want `project.md`'s left/right blackjack, treat it as an alternate profile (e.g. tablet).
+> **No mouse.** Trackpad is the only pointer device. Language throughout the codebase should say "trackpad" or "click/tap", never "mouse."
 
 ---
 
@@ -90,7 +96,7 @@ Two tiers:
 
 **No HTML overlays for identity text.** All game-facing typography lives in 3D so it catches lighting, casts shadows, and can be animated with GSAP/R3F.
 
-Exception: Roulette betting grid uses `drei` `<Html>` for precise click targets (CSS-styled, not default browser chrome).
+Exception: Roulette betting grid uses `drei` `<Html>` for precise trackpad click/tap targets (CSS-styled, not default browser chrome).
 
 ---
 
@@ -130,7 +136,7 @@ ENTER  →  INTERACT  →  RESOLVE  →  REVEAL  →  EXIT
 | Beat | Duration | GSAP Timeline Label | What Happens |
 |------|----------|---------------------|--------------|
 | **ENTER** | 1.5–2s | `enter` | Camera dollies in + slight orbit, game prop scales from 0 → 1 with `elastic.out(1, 0.5)`, title card fades |
-| **INTERACT** | Variable | — | Player agency: tilt, click, hold. No timeline — `useFrame` driven |
+| **INTERACT** | Variable | — | Player agency: tilt, trackpad, hold. No timeline — `useFrame` driven |
 | **RESOLVE** | 2–4s | `resolve` | Outcome plays out: reels stop, ball lands, cards fan. Sound synced to motion |
 | **REVEAL** | 2s (exactly) | `reveal` | Vault digits appear large (scale `0 → 1.2 → 1` with overshoot), glow pulse, score update animates, then digits fade to dashes |
 | **EXIT** | 1.5s | `exit` | Camera pulls back, game prop scales down, fog thickens, transition to next phase |
@@ -214,7 +220,8 @@ On entering each game: "SLOTS" / "ROULETTE" / "BLACKJACK" in 3D Playfair Display
     ├─ <Reel index={0} />     cylinder geometry, symbol texture atlas UV-mapped
     ├─ <Reel index={1} />
     ├─ <Reel index={2} />
-    ├─ <Lever />              hinged arm, spring return
+    ├─ <Lever />              cosmetic hinged arm, animates on tilt (not the input)
+    ├─ <TiltPrompt />         "TILT TO SPIN" 3D text, pulses until triggered
     ├─ <SymbolHighlights />   drei RectAreaLight per reel, activate on stop
     └─ <JackpotLights />      instanced small bulbs around frame, chase pattern on 777
   </SlotMachine>
@@ -231,18 +238,20 @@ Each reel is a `CylinderGeometry` (radiusTop=0.6, radiusBottom=0.6, height=0.8, 
 - Visible through glass panel — only the front-facing symbol is "active"
 - Spin axis: local Y rotation
 
-### Lever mechanics
+### Tilt-to-spin mechanic
 
-- **Idle:** Lever mesh at rest angle (30deg from vertical)
-- **Pull detection:** `useDeviceOrientation` beta spike > threshold within 300ms window
-- **Animation:** On pull, GSAP tweens lever to 60deg over 0.2s (`power2.in`), then spring return to 30deg over 0.4s with overshoot ease (`elastic.out(1, 0.6)`)
-- **Haptic feel:** Machine body does a micro-shake (position jitter ±0.01 over 0.15s) on lever pull
+The player tilts the laptop to spin the reels. No lever pull — the machine responds directly to the tilt itself:
+
+- **Idle:** Machine hums softly, reels stationary, "TILT TO SPIN" prompt pulses above the glass panel
+- **Spin detection:** `useDeviceOrientation` beta change past threshold (e.g. >15deg from neutral within 500ms). The magnitude/speed of the tilt maps to initial spin velocity — a lazy tilt = slow spin, a sharp committed tilt = reels blur
+- **Machine reaction:** On spin trigger, machine body does a micro-shake (position jitter ±0.01 over 0.15s), glass panel catches a light flash, spin sound kicks in
+- **Lever animation (cosmetic):** The lever on the side of the machine animates in sync — yanks down over 0.2s (`power2.in`), springs back over 0.4s (`elastic.out(1, 0.6)`). It's a visual flourish reacting to the tilt, not the input itself
 
 ### Spin → Stop animation sequence
 
 ```
-[PULL]
-  t=0.0   Lever yanks, machine shakes, spin sound starts
+[TILT]
+  t=0.0   Machine shakes, lever yanks (cosmetic), spin sound starts
   t=0.0   All 3 reels begin spinning (useFrame: rotation.y += velocity * dt)
            Initial velocity proportional to tilt commitment
            Velocity decays per frame: v *= 0.995 (fast spin lasts ~3s)
@@ -304,11 +313,11 @@ Each reel is a `CylinderGeometry` (radiusTop=0.6, radiusBottom=0.6, height=0.8, 
 
 ### Betting phase (15s) — the calm moment
 
-This is the only mouse-driven phase. It should feel unhurried and luxurious:
+This is the only trackpad-driven phase. It should feel unhurried and luxurious:
 
 - **Grid layout:** drei `<Html>` positioned above the felt plane, styled with CSS variables from `index.css`. Numbers 0–36 in standard roulette layout. Red/black chips as toggle.
-- **Hover:** Number cell background shifts to translucent gold, slight scale bump (CSS `transform: scale(1.05)`, 0.15s transition)
-- **Select:** Gold border, chip mesh spawns at the 3D position corresponding to the selected number (GSAP scale 0→1 with `back.out(2)`, 0.3s). If selection changes, chip slides to new position (0.4s `power2.inOut`)
+- **Hover:** Number cell background shifts to translucent gold, slight scale bump (CSS `transform: scale(1.05)`, 0.15s transition). Trackpad cursor movement drives hover.
+- **Select:** Trackpad click/tap selects. Gold border, chip mesh spawns at the 3D position corresponding to the selected number (GSAP scale 0→1 with `back.out(2)`, 0.3s). If selection changes, chip slides to new position (0.4s `power2.inOut`)
 - **Timer bar:** Horizontal bar at top of grid, starts full gold, depletes left-to-right over 15s. Last 5s: bar pulses amber (`#ff8c00`), soft tick-tock audio fades in
 - **Auto-lock:** At 0s, bet locks. If no bet placed, random fallback (highlighted briefly so player sees it)
 
@@ -452,7 +461,7 @@ const SOUNDS = {
   heartbeat:       { src: 'heartbeat.mp3', loop: true, volume: 0.3 },
 
   // Slots
-  leverPull:       { src: 'lever-pull.mp3', volume: 0.8 },
+  tiltTrigger:     { src: 'tilt-trigger.mp3', volume: 0.8 },
   reelSpin:        { src: 'reel-spin.mp3', loop: true, volume: 0.5 },
   reelStop:        { src: 'reel-stop.mp3', volume: 0.9 },
   jackpotFanfare:  { src: 'jackpot.mp3', volume: 1.0 },
@@ -507,16 +516,16 @@ const SOUNDS = {
 
 - [ ] `SlotMachine` component: body, glass, 3 reels, lever
 - [ ] Reel spin/stop with `useFrame` velocity + GSAP stop sequence
-- [ ] Lever tilt detection + animation
+- [ ] Tilt-to-spin detection + cosmetic lever animation
 - [ ] Symbol → digit mapping + vault digit push
 - [ ] Jackpot detection + coin particle burst
 - [ ] Enter/exit camera choreography
-- [ ] Audio: lever, spin loop, stop clunks, jackpot fanfare
+- [ ] Audio: tilt trigger, spin loop, stop clunks, jackpot fanfare
 
 ### M3 — Roulette
 
 - [ ] `RouletteTable` component: wheel, pockets, ball, felt, betting grid
-- [ ] Betting phase: HTML overlay grid, chip placement, 15s timer
+- [ ] Betting phase: HTML overlay grid (trackpad-driven), chip placement, 15s timer
 - [ ] Spin phase: alpha rotation → wheel velocity, ball release + parametric path
 - [ ] Ball spoke-click audio synced to crossing rate
 - [ ] Result detection + pocket highlight
