@@ -1,0 +1,30 @@
+:root {
+  --bg: #080808;
+  --felt: #0a3d2e;
+  --gold: #c9a84c;
+  --neon-red: #ff2d4b;
+  --laser: #e8f4ff;
+  --amber: #ff8c00;
+
+  --font-title: 'Playfair Display', serif;
+  --font-mono: 'JetBrains Mono', monospace;
+}
+
+*,
+*::before,
+*::after {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: var(--bg);
+  color: var(--gold);
+  font-family: var(--font-mono);
+}
